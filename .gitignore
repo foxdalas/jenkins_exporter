@@ -1,0 +1,5 @@
+/.build
+/.release
+/.tarballs
+jenkins_exporter
+*.tar.gz
