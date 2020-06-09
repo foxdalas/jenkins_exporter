@@ -1,6 +1,8 @@
 package main
 
 import (
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"gopkg.in/alecthomas/kingpin.v2"
 	"net/http"
 	"time"
 
@@ -8,7 +10,6 @@ import (
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/version"
 	"github.com/yosida95/golang-jenkins"
-	"gopkg.in/alecthomas/kingpin.v2"
 )
 
 const (
@@ -182,7 +183,7 @@ func main() {
 
 	prometheus.MustRegister(NewExporter(*url, *username, *password, *timeout))
 
-	http.Handle(*metricsPath, prometheus.Handler())
+	http.Handle(*metricsPath, promhttp.Handler())
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`<html>
       <head><title>Jenkins Exporter</title></head>
