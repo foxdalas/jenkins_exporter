@@ -1,7 +1,18 @@
-FROM        quay.io/prometheus/busybox:latest
-MAINTAINER  The Prometheus Authors <prometheus-developers@googlegroups.com>
+FROM golang:alpine as build
 
-COPY jenkins_exporter /bin/jenkins_exporter
+RUN apk add git
+
+WORKDIR /app
+COPY go.mod go.sum /app/
+RUN go mod download
+COPY . .
+RUN apk add alpine-sdk
+RUN go build .
+
+FROM alpine:3
+
+RUN apk --no-cache add ca-certificates
+COPY --from=build /app/jenkins_exporter /bin/
 
 ENTRYPOINT ["/bin/jenkins_exporter"]
 EXPOSE     9118
