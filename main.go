@@ -6,10 +6,13 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/foxdalas/jenkins_exporter/pkg/agents"
+	"github.com/foxdalas/jenkins_exporter/pkg/view"
+
+	"github.com/bndr/gojenkins"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/version"
-	"github.com/yosida95/golang-jenkins"
 )
 
 const (
@@ -19,6 +22,8 @@ const (
 
 var (
 	computer_label = []string{"computer"}
+	state_label = []string{"state"}
+	view_label = []string{"view"}
 )
 
 type Exporter struct {
@@ -31,6 +36,10 @@ type Exporter struct {
 	busy_executors  *prometheus.Desc
 	computers       *prometheus.Desc
 	computer_idle   *prometheus.Desc
+
+	views *prometheus.Desc
+
+	jnlp_agents *prometheus.Desc
 
 	computer_num_executors *prometheus.Desc
 	computer_offline       *prometheus.Desc
@@ -100,6 +109,20 @@ func NewExporter(url string, username string, password string, timeout time.Dura
 			computer_label,
 			nil,
 		),
+
+		views: prometheus.NewDesc(
+			prometheus.BuildFQName(namespace, "", "views"),
+			"Jenkins Views Count",
+			view_label,
+			nil,
+		),
+
+		jnlp_agents: prometheus.NewDesc(
+			prometheus.BuildFQName(namespace, "", "jnlp_agents"),
+			"Jenkins JNLP Agents",
+			state_label,
+			nil,
+		),
 	}
 }
 
@@ -110,40 +133,49 @@ func (e *Exporter) Describe(ch chan<- *prometheus.Desc) {
 	ch <- e.computers
 	ch <- e.computer_num_executors
 	ch <- e.computer_offline
+	ch <- e.views
+	ch <- e.jnlp_agents
 }
 
 func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
-
 	status := 1
-	auth := &gojenkins.Auth{
-		ApiToken: e.jenkins["password"],
-		Username: e.jenkins["username"],
-	}
-	jenkins := gojenkins.NewJenkins(auth, e.jenkins["url"])
+	jenkins := gojenkins.CreateJenkins(nil, e.jenkins["url"], e.jenkins["username"], e.jenkins["password"])
+	_, err := jenkins.Init()
+	assertError(err, &status)
 
-	jobs, err := jenkins.GetJobs()
+	jobs, err := jenkins.GetAllJobNames()
 	assertError(err, &status)
 
 	queue, err := jenkins.GetQueue()
 	assertError(err, &status)
 
-	computers, err := jenkins.GetComputers()
+	views, err := view.Get(jenkins)
 	assertError(err, &status)
 
-	computersObj, err := jenkins.GetComputerObject()
+	for _, view := range views {
+		ch <- prometheus.MustNewConstMetric(e.views, prometheus.GaugeValue, float64(len(view.Jobs)), view.Name)
+	}
+
+	jnlp_agents, err := agents.Get(jenkins)
 	assertError(err, &status)
+
 
 	ch <- prometheus.MustNewConstMetric(e.jobs, prometheus.GaugeValue, float64(len(jobs)))
-	ch <- prometheus.MustNewConstMetric(e.queue, prometheus.GaugeValue, float64(len(queue.Items)))
-	ch <- prometheus.MustNewConstMetric(e.computers, prometheus.GaugeValue, float64(len(computers)))
-	ch <- prometheus.MustNewConstMetric(e.total_executors, prometheus.GaugeValue, float64(computersObj.TotalExecutors))
-	ch <- prometheus.MustNewConstMetric(e.busy_executors, prometheus.GaugeValue, float64(computersObj.BusyExecutors))
+	ch <- prometheus.MustNewConstMetric(e.queue, prometheus.GaugeValue, float64(len(queue.Tasks())))
+	ch <- prometheus.MustNewConstMetric(e.computers, prometheus.GaugeValue, jnlp_agents.Total)
 
-	for _, computer := range computers {
-		ch <- prometheus.MustNewConstMetric(e.computer_idle, prometheus.CounterValue, bool2float64(computer.Idle), computer.DisplayName)
-		ch <- prometheus.MustNewConstMetric(e.computer_offline, prometheus.CounterValue, bool2float64(computer.Offline), computer.DisplayName)
-		ch <- prometheus.MustNewConstMetric(e.computer_num_executors, prometheus.CounterValue, float64(computer.NumExecutors), computer.DisplayName)
-	}
+	ch <- prometheus.MustNewConstMetric(e.jnlp_agents, prometheus.GaugeValue, jnlp_agents.Idle, "idle")
+	ch <- prometheus.MustNewConstMetric(e.jnlp_agents, prometheus.GaugeValue, jnlp_agents.Online, "online")
+	ch <- prometheus.MustNewConstMetric(e.jnlp_agents, prometheus.GaugeValue, jnlp_agents.Offline, "offline")
+	ch <- prometheus.MustNewConstMetric(e.jnlp_agents, prometheus.GaugeValue, jnlp_agents.Busy, "busy")
+
+
+	//
+	//for _, computer := range computers {
+	//	ch <- prometheus.MustNewConstMetric(e.computer_idle, prometheus.CounterValue, bool2float64(computer.Idle), computer.DisplayName)
+	//	ch <- prometheus.MustNewConstMetric(e.computer_offline, prometheus.CounterValue, bool2float64(computer.Offline), computer.DisplayName)
+	//	ch <- prometheus.MustNewConstMetric(e.computer_num_executors, prometheus.CounterValue, float64(computer.NumExecutors), computer.DisplayName)
+	//}
 	ch <- prometheus.MustNewConstMetric(e.up, prometheus.GaugeValue, float64(status))
 
 }
