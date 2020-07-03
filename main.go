@@ -176,7 +176,7 @@ func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
 	assertError(err, &status)
 
 	//Collect jobs
-	go func()  {
+	jobsStats := func() []*jobs_stats.JobsStats {
 		if !jobsStatsLock {
 			jobsStatsLock = true
 			log.Info("Collecting jobs ")
@@ -185,17 +185,18 @@ func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
 				log.Error(err)
 			}
 			jobsStatsLock = false
-			jobsStats = queueJobsStats
 			log.Info("Finish collecting jobs")
+			return queueJobsStats
 		} else {
 			log.Warn("Still collecting jobs")
 		}
-	}()
+		return nil
+	}
 
 	log.Infof("Jobs %d", len(jobsStats))
 
-	for _, jobStats := range jobsStats {
-		ch <- prometheus.MustNewConstMetric(e.job_duration, prometheus.GaugeValue, float64(jobStats.Duration), jobStats.Name)
+	for _, jobStat := range jobsStats() {
+		ch <- prometheus.MustNewConstMetric(e.job_duration, prometheus.GaugeValue, float64(jobStat.Duration), jobStat.Name)
 	}
 
 	ch <- prometheus.MustNewConstMetric(e.jobs, prometheus.GaugeValue, float64(len(jobs)))
