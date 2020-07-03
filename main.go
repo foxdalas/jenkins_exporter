@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/foxdalas/jenkins_exporter/pkg/agents"
+	"github.com/foxdalas/jenkins_exporter/pkg/jobs_stats"
 	"github.com/foxdalas/jenkins_exporter/pkg/view"
 
 	"github.com/bndr/gojenkins"
@@ -21,10 +22,16 @@ const (
 )
 
 var (
+	job_label = []string{"job"}
 	computer_label = []string{"computer"}
 	state_label = []string{"state"}
 	view_label = []string{"view"}
+
+	jobsStats []*jobs_stats.JobsStats
+	jobsStatsLock bool
 )
+
+
 
 type Exporter struct {
 	jenkins map[string]string
@@ -40,6 +47,8 @@ type Exporter struct {
 	views *prometheus.Desc
 
 	jnlp_agents *prometheus.Desc
+
+	job_duration *prometheus.Desc
 
 	computer_num_executors *prometheus.Desc
 	computer_offline       *prometheus.Desc
@@ -62,9 +71,15 @@ func NewExporter(url string, username string, password string, timeout time.Dura
 			nil,
 		),
 		jobs: prometheus.NewDesc(
-			prometheus.BuildFQName(namespace, "", "jobs"),
+			prometheus.BuildFQName(namespace, "", "jobs_stats"),
 			"Jobs count.",
 			nil,
+			nil,
+		),
+		job_duration: prometheus.NewDesc(
+			prometheus.BuildFQName(namespace, "", "job_duration"),
+			"Job duration.",
+			job_label,
 			nil,
 		),
 		queue: prometheus.NewDesc(
@@ -135,6 +150,7 @@ func (e *Exporter) Describe(ch chan<- *prometheus.Desc) {
 	ch <- e.computer_offline
 	ch <- e.views
 	ch <- e.jnlp_agents
+	ch <- e.job_duration
 }
 
 func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
@@ -159,6 +175,28 @@ func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
 	jnlp_agents, err := agents.Get(jenkins)
 	assertError(err, &status)
 
+	//Collect jobs
+	go func()  {
+		if !jobsStatsLock {
+			jobsStatsLock = true
+			log.Info("Collecting jobs ")
+			queueJobsStats, err := jobs_stats.Get(jenkins)
+			if err != nil {
+				log.Error(err)
+			}
+			jobsStatsLock = false
+			jobsStats = queueJobsStats
+			log.Info("Finish collecting jobs")
+		} else {
+			log.Warn("Still collecting jobs")
+		}
+	}()
+
+	log.Infof("Jobs %d", len(jobsStats))
+
+	for _, jobStats := range jobsStats {
+		ch <- prometheus.MustNewConstMetric(e.job_duration, prometheus.GaugeValue, float64(jobStats.Duration), jobStats.Name)
+	}
 
 	ch <- prometheus.MustNewConstMetric(e.jobs, prometheus.GaugeValue, float64(len(jobs)))
 	ch <- prometheus.MustNewConstMetric(e.queue, prometheus.GaugeValue, float64(len(queue.Tasks())))
@@ -225,6 +263,7 @@ func main() {
       </body>
       </html>`))
 	})
+
 	log.Infoln("Starting HTTP server on", *listenAddress)
 	log.Fatal(http.ListenAndServe(*listenAddress, nil))
 }
