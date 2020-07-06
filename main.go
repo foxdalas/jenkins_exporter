@@ -22,7 +22,7 @@ const (
 )
 
 var (
-	job_label = []string{"job"}
+	job_label = []string{"job", "branch"}
 	computer_label = []string{"computer"}
 	state_label = []string{"state"}
 	view_label = []string{"view"}
@@ -175,28 +175,13 @@ func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
 	jnlp_agents, err := agents.Get(jenkins)
 	assertError(err, &status)
 
-	//Collect jobs
-	jobsStats := func() []*jobs_stats.JobsStats {
-		if !jobsStatsLock {
-			jobsStatsLock = true
-			log.Info("Collecting jobs ")
-			queueJobsStats, err := jobs_stats.Get(jenkins)
-			if err != nil {
-				log.Error(err)
-			}
-			jobsStatsLock = false
-			log.Info("Finish collecting jobs")
-			return queueJobsStats
-		} else {
-			log.Warn("Still collecting jobs")
-		}
-		return nil
-	}
+	jobsStats, err := jobs_stats.Get(jenkins)
 
-	log.Infof("Jobs %d", len(jobsStats))
+	//log.Infof("Jobs %d", len(jobsStats))
 
-	for _, jobStat := range jobsStats() {
-		ch <- prometheus.MustNewConstMetric(e.job_duration, prometheus.GaugeValue, float64(jobStat.Duration), jobStat.Name)
+	for _, jobStat := range jobsStats {
+		log.Infof("Job name: %s branch: %s with duration %d", jobStat.Name, jobStat.Branch, jobStat.Duration)
+		ch <- prometheus.MustNewConstMetric(e.job_duration, prometheus.GaugeValue, float64(jobStat.Duration), jobStat.Name,jobStat.Branch)
 	}
 
 	ch <- prometheus.MustNewConstMetric(e.jobs, prometheus.GaugeValue, float64(len(jobs)))
