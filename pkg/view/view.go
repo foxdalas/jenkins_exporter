@@ -7,8 +7,8 @@ type View struct {
 	Jobs []string
 }
 
-func Get(jenkins *gojenkins.Jenkins) ([]*View, error) {
-	var viewsData []*View
+func Get(jenkins *gojenkins.Jenkins) ([]View, error) {
+	var viewsData []View
 
 	views, err := jenkins.GetAllViews()
 	if err != nil {
@@ -21,7 +21,7 @@ func Get(jenkins *gojenkins.Jenkins) ([]*View, error) {
 			jobs = append(jobs, job.Name)
 		}
 
-		viewData := &View{
+		viewData := View{
 			Name: view.GetName(),
 			Jobs: jobs,
 		}
