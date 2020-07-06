@@ -8,16 +8,16 @@ type Agents struct {
 	Idle float64
 	Busy float64
 
-	Online float64
+	Online  float64
 	Offline float64
 }
 
-func Get(jenkins *gojenkins.Jenkins) (*Agents, error){
-	agents := &Agents{
-		Total: 0.0,
-		Idle: 0.0,
-		Busy: 0.0,
-		Online: 0.0,
+func Get(jenkins *gojenkins.Jenkins) (Agents, error) {
+	agents := Agents{
+		Total:   0.0,
+		Idle:    0.0,
+		Busy:    0.0,
+		Online:  0.0,
 		Offline: 0.0,
 	}
 
